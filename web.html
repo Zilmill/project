@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+</head>
+<body>
+<script src="js/mqtt.js"></script>
+<script>
+    connectMQTT()
+    function connectMQTT(){
+        if (window.WebSocket){
+            alert("您的浏览器支持 WebSocket!");
+            //服务器端的地址
+            var ip = "ws://192.168.0.2:9001/";
+            //建立 Websocket 连接
+            var client = mqtt.connect(ip);
+            //订阅 Topic 获取 MQTT 消息
+            client.subscribe(["/pos_business/alarm_inform"]);
+            //收到服务器数据的回调函数
+                client.on("message", function (topic, payload) {
+                    //处理自己的业务逻辑
+
+                });
+            //错误返回的回调函数
+            client.on("error",function(){
+                console.log("mqtt client is error")
+            });
+            client.on("reconnect",function(){
+                console.log("mqtt client try to reconnect")
+            })
+        }else {
+            alert("该浏览版本过于老旧，无法显示定位数据，请使用最新版 chrome 浏览器");
+        }
+    }
+
+</script>
+</body>
+</html>

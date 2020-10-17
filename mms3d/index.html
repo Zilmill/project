@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="user-scalable=no, width=device-width, initial-scale=1, maximum-scale=1">	
+
+<title></title>
+<link rel="shortcut icon" href="textures/favicon.png">
+
+<style>
+	canvas { width: 100%; height: 100% }
+
+	body{ 
+		border: none; 
+		overflow: hidden; 
+		margin: 0px;
+        background-color: #021732;
+		background-size: cover;
+	}
+
+    ul li{
+        list-style: none;
+    }
+
+</style>
+
+</head>
+
+<body>
+
+
+
+
+<div id='bar' style="position: absolute;z-index: 1; width: 100px; top:34%;left:50%; margin-left:-50px;text-align: center; font-family: '微软雅黑';font-size: 36px;color: #aaaaaa;">
+    <div class="loadEffect">
+        <span></span>
+        <span></span>
+        <span></span>
+        <span></span>
+        <span></span>
+        <span></span>
+        <span></span>
+        <span></span>
+    </div>
+    <div id="barNum">0%</div>
+</div>
+
+
+<script src="js/mms3D.V103.js"></script>
+<script src="js/mms3D.libs.js"></script>
+<script src="js/mms3D.pass.js"></script>
+<script src="js/THREEx.KeyboardState.js"></script>
+<script src="js/CSS3DRenderer.js"></script>
+<script src="js/jquery-3.3.1.min.js"></script>
+<script src="js/jlp.set.js"></script>
+<script src='https://cdn.bootcss.com/socket.io/2.0.3/socket.io.js'></script>
+<script src='//cdn.bootcss.com/jquery/1.11.3/jquery.js'></script>
+<script src='js/notify.js'></script>
+<script src="js/websocket.js"></script>
+
+<script>
+
+  //参数设置
+  var modelUrl = "models/gltf/dj.gltf";
+  var modelScale = 1.0;
+  var clickModelLight;
+  //禁止微信下拉
+  document.body.addEventListener('touchmove', function (e) {
+    e.preventDefault();
+  }, {passive: false});
+
+
+
+  //进度条
+  function onProgress( xhr ) {
+    var percentComplete = xhr.loaded / xhr.total * 99;
+    document.getElementById('barNum').innerHTML = Math.round( percentComplete )+'%';
+  };
+  function endProgress(){
+    document.getElementById('barNum').innerHTML = '100%';
+    setTimeout(function(){
+      controls.target.set(104.27439,2.7808,-40.9120);
+      camera.position.set(320.6015,51.9481,218.7555);   //对初始位置
+
+        document.getElementById('bar').parentNode.removeChild(document.getElementById('bar'));
+    },1000);
+  }
+  var onError = function ( xhr ) { };
+
+
+
+
+  var	container = document.createElement( 'div' );
+  document.body.appendChild( container );
+  var	scene = new MMS3D.Scene();
+  var	camera = new MMS3D.PerspectiveCamera( 45, window.innerWidth / window.innerHeight, 1, 1500 );
+
+
+  //帧数计数测试
+   var stats = new Stats();
+   container.appendChild( stats.dom );
+
+
+
+  //太阳光   定向光
+  var sunLight = new MMS3D.DirectionalLight( 0xffdcb2, 1.8 );
+  sunLight.position.set( -1000, 1000, -1000 );
+  sunLight.castShadow = true;
+
+  sunLight.shadow.mapSize.width = 2048;
+  sunLight.shadow.mapSize.height = 2048;
+  sunLight.shadow.camera.near = 10;
+  sunLight.shadow.camera.far = 10000;
+  sunLight.shadow.bias = -0.0005;
+  var d = 1000;
+  sunLight.shadow.camera.left = - d;
+  sunLight.shadow.camera.right = d;
+  sunLight.shadow.camera.top = d;
+  sunLight.shadow.camera.bottom = - d;
+
+  scene.add( sunLight );
+
+
+
+
+  //渲染器
+  var	renderer = new MMS3D.WebGLRenderer( { antialias: true ,alpha: true } );
+  renderer.setSize( window.innerWidth, window.innerHeight );
+  renderer.setPixelRatio( window.devicePixelRatio );
+  renderer.setClearColor ( '#01192c' );
+  container.appendChild( renderer.domElement );
+  renderer.gammaInput = true;
+  renderer.gammaOutput = true;
+  renderer.shadowMapEnabled = true;
+
+
+
+
+  //反射材质
+  var	textureCube = new MMS3D.RGBELoader2()
+      .setDataType( MMS3D.UnsignedByteType )
+      .load( 'textures/evMap/020.hdr', function ( texture ) {
+        let cubeGenerator = new MMS3D.EquirectangularToCubeGenerator( texture, { resolution: 1024 } );
+        cubeGenerator.update( renderer );
+        let pmremGenerator = new MMS3D.PMREMGenerator( cubeGenerator.renderTarget.texture );
+        pmremGenerator.update( renderer );
+        let pmremCubeUVPacker = new MMS3D.PMREMCubeUVPacker( pmremGenerator.cubeLods );
+        pmremCubeUVPacker.update( renderer );
+        textureCube = pmremCubeUVPacker.CubeUVRenderTarget.texture;
+      });
+
+
+
+  //鼠标控制器
+  var controls = new MMS3D.OrbitControls( camera );
+  controls.maxPolarAngle = Math.PI*0.5;
+  // controls.minPolarAngle = Math.PI*0.1;
+  controls.minDistance = 100;
+  controls.maxDistance = 1000;
+  controls.enabled = true;
+  controls.target.set(0,0,10);
+  controls.autoRotate = false;
+
+
+  //屏幕尺寸大小监听
+  window.addEventListener( 'resize', onWindowResize, false );
+  function onWindowResize( event ) {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize( window.innerWidth, window.innerHeight );
+  }
+
+
+
+  //抗锯齿
+  var effectSSAA = new MMS3D.SSAARenderPass( scene, camera );
+  effectSSAA.sampleLevel = 3;    //平滑等级0~5
+
+
+  ///////////////////
+  // *后期通道start *//
+  ///////////////////
+
+  //场景通道
+  var renderScene = new MMS3D.RenderPass(scene, camera);
+
+  // *沟边*
+  var params = {
+    edgeStrength: 4.0, //沟边深浅
+    edgeGlow: 0.0, //光晕
+    edgeThickness: 1.0, //粗细
+    pulsePeriod: 0, //闪烁
+    visibleEdgeColor: 0xf8fb00, //沟边颜色
+    hiddenEdgeColor: 0xf8fb00, //被挡住的颜色
+  };
+  var outlinePass = new MMS3D.OutlinePass(new MMS3D.Vector2(window.innerWidth, window.innerHeight), scene, camera);
+  outlinePass.edgeStrength = params.edgeStrength;
+  outlinePass.edgeGlow = params.edgeGlow;
+  outlinePass.edgeThickness = params.edgeThickness;
+  outlinePass.pulsePeriod = params.pulsePeriod;
+  outlinePass.visibleEdgeColor.set(params.visibleEdgeColor);
+  outlinePass.hiddenEdgeColor.set(params.hiddenEdgeColor);
+
+  //通道
+  var composer = new MMS3D.EffectComposer(renderer);
+
+  composer.setSize(window.innerWidth, window.innerHeight);
+  composer.addPass(renderScene);
+  composer.addPass(outlinePass);
+  composer.addPass(effectSSAA);
+
+
+
+  ///////////////////
+  // *后期通道end *//
+  ///////////////////
+
+
+  ///////////////////
+  // * 初始化 end  *//
+  ///////////////////
+
+
+
+
+  /////////////////////
+  // *添加模型start *//
+  /////////////////////
+
+  var GLTFLoader = new MMS3D.GLTFLoader();
+  MMS3D.DRACOLoader.setDecoderPath( 'js/gltf/' );
+  GLTFLoader.setDRACOLoader( new MMS3D.DRACOLoader() );
+
+  var grounds=[];
+  var clock = new MMS3D.Clock();
+
+
+  //房
+  //科技风材质
+  var techMaterials = new MMS3D.MeshBasicMaterial({
+      color: 0x19e8f8,    //002b7a
+      transparent:true,
+      opacity:0.2,
+      side: MMS3D.DoubleSide,
+      depthWrite: false,
+  });
+
+  //科技风材质
+  var techMaterialsline = new MMS3D.MeshBasicMaterial({
+      color: 0x3bf1ff,    //002b7a
+      transparent:true,
+      opacity:1,
+      side: MMS3D.DoubleSide,
+      depthWrite: false,
+  });
+  GLTFLoader.load( 'model/shen/asas.gltf', function ( gltf ) {
+      var Room;
+      //几何
+      Room = gltf.scene.clone();
+      Room.position.set(0,0,0);                   //模型位置
+      Room.scale.set(1, 1, 1); 	           //缩放大小
+      Room.rotation.set(0,0,0);
+      Room.visible = true;
+      //材质
+      Room.traverse( function ( child ) {
+          if ( child.isMesh ) {
+              console.log(child.material.name)
+              // 线
+              if(child.material.name=="22Default"){
+                  child.material = techMaterialsline;
+              }else if(child.material.name=="Default"){
+                  child.material = techMaterials;
+              }else{
+                  child.material = techMaterials;
+              }
+
+
+          }
+      });
+
+      scene.add( Room );
+      grounds.push(Room)
+      endProgress();    //加载完成
+  });
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  var raycaster = new MMS3D.Raycaster();
+  var mouse = new MMS3D.Vector2();
+  document.addEventListener( 'mouseup', onDocumentMouseUp, false );   //左键鼠标点击
+  document.addEventListener( 'mousemove', onDocumentMouseMove, false );  //鼠标移动
+  document.addEventListener('dblclick', mouseTwo, false);   //左键鼠标双击
+
+
+
+
+  // 单击事件
+  function onDocumentMouseUp(event) {
+    event.preventDefault();
+    mouse.x = ( event.clientX / renderer.domElement.width ) * 2 - 1;
+    mouse.y = - ( event.clientY  / renderer.domElement.height  ) * 2 + 1;
+    raycaster.setFromCamera( mouse, camera );
+
+    console.log(controls.target);
+    console.log(camera.position);
+      // 坐标事件
+      var groundsTest = raycaster.intersectObjects( grounds ,true);
+      if ( groundsTest.length > 0) {
+          console.log(groundsTest[0].point.x.toFixed(1)+","+groundsTest[0].point.y.toFixed(1)+","+groundsTest[0].point.z.toFixed(1) );
+      }
+
+
+
+  }
+  // 移入事件
+  function onDocumentMouseMove(event) {
+      mouse.x = ( event.clientX / renderer.domElement.width ) * 2 - 1;
+      mouse.y = - ( event.clientY  / renderer.domElement.height  ) * 2 + 1;
+      raycaster.setFromCamera( mouse, camera );
+
+  }
+  // 双击事件
+  function mouseTwo(event){
+    event.preventDefault();
+    mouse.x = ( event.clientX / renderer.domElement.width ) * 2 - 1;
+    mouse.y = - ( event.clientY  / renderer.domElement.height  ) * 2 + 1;
+
+  }
+
+
+
+
+
+  labelRenderer = new MMS3D.CSS3DRenderer();
+  labelRenderer.setSize( window.innerWidth, window.innerHeight );
+  labelRenderer.domElement.style.position = 'absolute';
+  labelRenderer.domElement.style.top = 0;
+  document.body.appendChild( labelRenderer.domElement );
+
+
+  var composerSW=true;
+  render();  //渲染三维
+  function render() {
+    requestAnimationFrame( render );
+    //
+    TWEEN.update();
+    controls.update();
+    stats.update();
+    renderer.render( scene, camera );
+    labelRenderer.render( scene, camera );
+      renderer.clear();
+    //渲染
+    if(composerSW){
+      composer.render();
+    }else{
+      renderer.render( scene, camera );
+    }
+
+  }
+
+</script>
+
+	
+</body>
+</html>
